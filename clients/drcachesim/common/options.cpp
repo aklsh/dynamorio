@@ -391,20 +391,20 @@ droption_t<bytesize_t> op_page_size(DROPTION_SCOPE_FRONTEND, "page_size",
                                     "Specifies the virtual/physical page size.");
 
 droption_t<unsigned int> op_TLB_L1I_entries(
-    DROPTION_SCOPE_FRONTEND, "TLB_L1I_entries", 32,
+    DROPTION_SCOPE_FRONTEND, "TLB_L1I_entries", 64,
     "Number of entries in instruction TLB",
     "Specifies the number of entries in each L1 instruction TLB.  Must be a power of 2.");
 
 droption_t<unsigned int> op_TLB_L1D_entries(
-    DROPTION_SCOPE_FRONTEND, "TLB_L1D_entries", 32, "Number of entries in data TLB",
+    DROPTION_SCOPE_FRONTEND, "TLB_L1D_entries", 64, "Number of entries in data TLB",
     "Specifies the number of entries in each L1 data TLB.  Must be a power of 2.");
 
 droption_t<unsigned int> op_TLB_L1I_assoc(
-    DROPTION_SCOPE_FRONTEND, "TLB_L1I_assoc", 32, "Instruction TLB associativity",
+    DROPTION_SCOPE_FRONTEND, "TLB_L1I_assoc", 8, "Instruction TLB associativity",
     "Specifies the associativity of each L1 instruction TLB.  Must be a power of 2.");
 
 droption_t<unsigned int> op_TLB_L1D_assoc(
-    DROPTION_SCOPE_FRONTEND, "TLB_L1D_assoc", 32, "Data TLB associativity",
+    DROPTION_SCOPE_FRONTEND, "TLB_L1D_assoc", 8, "Data TLB associativity",
     "Specifies the associativity of each L1 data TLB.  Must be a power of 2.");
 
 droption_t<unsigned int> op_TLB_L2_entries(

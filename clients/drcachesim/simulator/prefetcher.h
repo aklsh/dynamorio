@@ -49,9 +49,6 @@ public:
     }
     virtual void
     prefetch(caching_device_t *cache, const memref_t &memref);
-
-private:
-    int block_size_;
 };
 
 #endif /* _PREFETCHER_H_ */
