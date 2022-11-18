@@ -1,0 +1,3 @@
+%compile_commands.json
+%c -std=c11
+%cpp -std=c++14

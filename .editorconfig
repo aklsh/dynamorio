@@ -1,0 +1,10 @@
+# top-most EditorConfig file
+root = true
+
+# Tab indentation (no size specified)
+[Makefile]
+indent_style = tab
+
+[*.{c,cpp}]
+indent_style = space
+indent_size = 4
