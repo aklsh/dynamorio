@@ -36,18 +36,23 @@
 #ifndef _TLB_STATS_H_
 #define _TLB_STATS_H_ 1
 
+#include <string>
 #include "caching_device_stats.h"
 
 class tlb_stats_t : public caching_device_stats_t {
+protected:
+    int id_;
+    std::string type_;
+
 public:
-    tlb_stats_t(int block_size)
-        : caching_device_stats_t("", block_size)
-    {
-    }
+    explicit tlb_stats_t(int block_size, int id = -1, std::string type = "");
     // XXX: support page privilege and MMU-related exceptions
 
     // It might be necessary to report stats of exceptions
     // triggered by address translation, e.g., address unaligned exception.
+
+    void
+    check_compulsory_miss(addr_t addr) override;
 };
 
 #endif /* _TLB_STATS_H_ */

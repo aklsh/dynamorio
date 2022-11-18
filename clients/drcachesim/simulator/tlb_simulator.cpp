@@ -58,12 +58,28 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
 {
     itlbs_ = new tlb_t *[knobs_.num_cores];
     dtlbs_ = new tlb_t *[knobs_.num_cores];
-    lltlbs_ = new tlb_t *[knobs_.num_cores];
+    lltlbs_ = new tlb_t;
     for (unsigned int i = 0; i < knobs_.num_cores; i++) {
         itlbs_[i] = NULL;
         dtlbs_[i] = NULL;
-        lltlbs_[i] = NULL;
     }
+    lltlbs_ = create_tlb(knobs_.TLB_replace_policy);
+    if (lltlbs_ == NULL) {
+        error_string_ = "Failed to create lltlbs_";
+        success_ = false;
+        return;
+    }
+
+    if(!lltlbs_->init(knobs_.TLB_L2_assoc, (int)knobs_.page_size,
+                      knobs_.TLB_L2_entries, NULL,
+                      new tlb_stats_t((int)knobs_.page_size))) {
+        error_string_ =
+            "Usage error: failed to initialize TLbs_. Ensure entry number, "
+            "page size and associativity are powers of 2.";
+        success_ = false;
+        return;
+    }
+
     for (unsigned int i = 0; i < knobs_.num_cores; i++) {
         itlbs_[i] = create_tlb(knobs_.TLB_replace_policy);
         if (itlbs_[i] == NULL) {
@@ -77,22 +93,13 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
             success_ = false;
             return;
         }
-        lltlbs_[i] = create_tlb(knobs_.TLB_replace_policy);
-        if (lltlbs_[i] == NULL) {
-            error_string_ = "Failed to create lltlbs_";
-            success_ = false;
-            return;
-        }
 
         if (!itlbs_[i]->init(knobs_.TLB_L1I_assoc, (int)knobs_.page_size,
-                             knobs_.TLB_L1I_entries, lltlbs_[i],
-                             new tlb_stats_t((int)knobs_.page_size)) ||
+                             knobs_.TLB_L1I_entries, lltlbs_, new tlb_stats_t((int)knobs_.page_size, i, "ITLB"),
+                             NULL, false, false, i) ||
             !dtlbs_[i]->init(knobs_.TLB_L1D_assoc, (int)knobs_.page_size,
-                             knobs_.TLB_L1D_entries, lltlbs_[i],
-                             new tlb_stats_t((int)knobs_.page_size)) ||
-            !lltlbs_[i]->init(knobs_.TLB_L2_assoc, (int)knobs_.page_size,
-                              knobs_.TLB_L2_entries, NULL,
-                              new tlb_stats_t((int)knobs_.page_size))) {
+                             knobs_.TLB_L1D_entries, lltlbs_, new tlb_stats_t((int)knobs_.page_size, i, "DTLB"),
+                             NULL, false, false, i)) {
             error_string_ =
                 "Usage error: failed to initialize TLbs_. Ensure entry number, "
                 "page size and associativity are powers of 2.";
@@ -114,14 +121,13 @@ tlb_simulator_t::~tlb_simulator_t()
             return;
         delete dtlbs_[i]->get_stats();
         delete dtlbs_[i];
-        if (lltlbs_[i] == NULL)
-            return;
-        delete lltlbs_[i]->get_stats();
-        delete lltlbs_[i];
     }
+    if (lltlbs_ == NULL)
+        return;
+    delete lltlbs_->get_stats();
+    delete lltlbs_;
     delete[] itlbs_;
     delete[] dtlbs_;
-    delete[] lltlbs_;
 }
 
 bool
@@ -203,8 +209,8 @@ tlb_simulator_t::process_memref(const memref_t &memref)
             for (unsigned int i = 0; i < knobs_.num_cores; i++) {
                 itlbs_[i]->get_stats()->reset();
                 dtlbs_[i]->get_stats()->reset();
-                lltlbs_[i]->get_stats()->reset();
             }
+            lltlbs_->get_stats()->reset();
         }
     } else {
         knobs_.sim_refs--;
@@ -216,6 +222,8 @@ bool
 tlb_simulator_t::print_results()
 {
     std::cerr << "TLB simulation results:\n";
+    std::cerr << "  LL stats:" << std::endl;
+    lltlbs_->get_stats()->print_stats("    ");
     for (unsigned int i = 0; i < knobs_.num_cores; i++) {
         print_core(i);
         if (thread_ever_counts_[i] > 0) {
@@ -223,8 +231,6 @@ tlb_simulator_t::print_results()
             itlbs_[i]->get_stats()->print_stats("    ");
             std::cerr << "  L1D stats:" << std::endl;
             dtlbs_[i]->get_stats()->print_stats("    ");
-            std::cerr << "  LL stats:" << std::endl;
-            lltlbs_[i]->get_stats()->print_stats("    ");
         }
     }
     return true;

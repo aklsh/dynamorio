@@ -30,39 +30,31 @@
  * DAMAGE.
  */
 
-/* tlb_simulator: controls the multi-level TLB simulation.
- */
-
-#ifndef _TLB_SIMULATOR_H_
-#define _TLB_SIMULATOR_H_ 1
-
-#include <unordered_map>
-#include "simulator.h"
-#include "tlb_simulator_create.h"
+#include <iostream>
+#include <iomanip>
 #include "tlb_stats.h"
-#include "tlb.h"
 
-class tlb_simulator_t : public simulator_t {
-public:
-    tlb_simulator_t(const tlb_simulator_knobs_t &knobs);
-    virtual ~tlb_simulator_t();
-    bool
-    process_memref(const memref_t &memref) override;
-    bool
-    print_results() override;
+tlb_stats_t::tlb_stats_t(int block_size, int id, std::string type)
+    : caching_device_stats_t("", block_size)
+    , id_(id)
+    , type_(type)
+{
 
-protected:
-    // Create a tlb_t object with a specific replacement policy.
-    virtual tlb_t *
-    create_tlb(std::string policy);
+}
+void tlb_stats_t::check_compulsory_miss(addr_t addr)
+{
+    auto lookup_pair = access_count_.lookup(addr);
 
-    tlb_simulator_knobs_t knobs_;
-
-    // Each CPU core contains a L1 ITLB, L1 DTLB and L2 TLB.
-    // All of them are private to the core.
-    tlb_t **itlbs_;
-    tlb_t **dtlbs_;
-    tlb_t *lltlbs_;
-};
-
-#endif /* _TLB_SIMULATOR_H_ */
+    // If the address has never been accessed insert proper bound into access_count_
+    // and count it as a compulsory miss.
+    if (!lookup_pair.first) {
+        if(type_ != ""){
+            int block_size_bits = compute_log2(1<<12);
+            int block_size_mask = ~((1 << block_size_bits) - 1);
+            addr_t page_num = addr & block_size_mask;
+            std::cerr << "CPU " << id_ << " " << type_ << " " << std::hex << page_num << std::dec << std::endl;
+        }
+        num_compulsory_misses_++;
+        access_count_.insert(addr, lookup_pair.second);
+    }
+}

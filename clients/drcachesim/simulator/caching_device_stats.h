@@ -208,7 +208,7 @@ protected:
     virtual void
     dump_miss(const memref_t &memref);
 
-    void
+    virtual void
     check_compulsory_miss(addr_t addr);
 
     int_least64_t num_hits_;
