@@ -34,6 +34,31 @@
 #include "../common/utils.h"
 #include <assert.h>
 
+bool
+tlb_t::init(int associativity, int block_size, int total_size,
+            caching_device_t *parent, caching_device_stats_t *stats,
+            prefetcher_t *prefetcher, bool inclusive, bool coherent_cache, int id,
+            snoop_filter_t *snoop_filter,
+            const std::vector<caching_device_t *> &children)
+{
+    // Works in the same way as the base class,
+    // except that the counters are initialized in a different way.
+
+    bool ret_val =
+        caching_device_t::init(associativity, block_size, total_size, parent, stats, prefetcher,
+                      inclusive, coherent_cache, id, snoop_filter, children);
+    if (ret_val == false)
+        return false;
+
+    // Initialize line counters with 0, 1, 2, ..., associativity - 1.
+    for (int i = 0; i < blocks_per_set_; i++) {
+        for (int way = 0; way < associativity_; ++way) {
+            get_caching_device_block(i << assoc_bits_, way).counter_ = way;
+        }
+    }
+    return true;
+}
+
 void
 tlb_t::init_blocks()
 {
@@ -120,4 +145,45 @@ tlb_t::request(const memref_t &memref_in)
         last_block_idx_ = block_idx;
         last_pid_ = pid;
     }
+}
+
+void
+tlb_t::access_update(int block_idx, int way)
+{
+    int cnt = get_caching_device_block(block_idx, way).counter_;
+    // Optimization: return early if it is a repeated access.
+    if (cnt == 0)
+        return;
+    // We inc all the counters that are not larger than cnt for LRU.
+    for (int i = 0; i < associativity_; ++i) {
+        if (i != way && get_caching_device_block(block_idx, i).counter_ <= cnt)
+            get_caching_device_block(block_idx, i).counter_++;
+    }
+    // Clear the counter for LRU.
+    get_caching_device_block(block_idx, way).counter_ = 0;
+}
+
+int
+tlb_t::replace_which_way(int block_idx)
+{
+    return get_next_way_to_replace(block_idx);
+}
+
+int
+tlb_t::get_next_way_to_replace(int block_idx) const
+{
+    // We implement LRU by picking the slot with the largest counter value.
+    int max_counter = 0;
+    int max_way = 0;
+    for (int way = 0; way < associativity_; ++way) {
+        if (get_caching_device_block(block_idx, way).tag_ == TAG_INVALID) {
+            max_way = way;
+            break;
+        }
+        if (get_caching_device_block(block_idx, way).counter_ > max_counter) {
+            max_counter = get_caching_device_block(block_idx, way).counter_;
+            max_way = way;
+        }
+    }
+    return max_way;
 }

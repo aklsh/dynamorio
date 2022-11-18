@@ -42,6 +42,12 @@
 
 class tlb_t : public caching_device_t {
 public:
+    bool
+    init(int associativity, int block_size, int num_blocks, caching_device_t *parent,
+         caching_device_stats_t *stats, prefetcher_t *prefetcher = nullptr,
+         bool inclusive = false, bool coherent_cache = false, int id_ = -1,
+         snoop_filter_t *snoop_filter_ = nullptr,
+         const std::vector<caching_device_t *> &children = {}) override;
     void
     request(const memref_t &memref) override;
 
@@ -52,7 +58,12 @@ public:
 protected:
     void
     init_blocks() override;
-
+    void
+    access_update(int block_idx, int way) override;
+    int
+    replace_which_way(int block_idx) override;
+    int
+    get_next_way_to_replace(const int block_idx) const override;
     // Optimization: remember last pid in addition to last tag
     memref_pid_t last_pid_;
 };
