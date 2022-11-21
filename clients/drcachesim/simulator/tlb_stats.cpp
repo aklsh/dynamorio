@@ -48,7 +48,7 @@ void tlb_stats_t::check_compulsory_miss(addr_t addr)
     // If the address has never been accessed insert proper bound into access_count_
     // and count it as a compulsory miss.
     if (!lookup_pair.first) {
-        if(type_ != ""){
+        if(type_ == "alskj"){
             int block_size_bits = compute_log2(1<<12);
             int block_size_mask = ~((1 << block_size_bits) - 1);
             addr_t page_num = addr & block_size_mask;

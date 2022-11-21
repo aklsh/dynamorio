@@ -147,6 +147,7 @@ add_exported_library(drmemtrace_simulator STATIC
   simulator/caching_device_stats.cpp
   simulator/cache_stats.cpp
   simulator/tlb_stats.cpp
+  simulator/tlb_prefetcher.cpp
   simulator/prefetcher.cpp
   simulator/cache_simulator.cpp
   simulator/snoop_filter.cpp

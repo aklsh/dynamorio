@@ -37,6 +37,7 @@
 #define _TLB_H_ 1
 
 #include "caching_device.h"
+#include "tlb_prefetcher.h"
 #include "tlb_entry.h"
 #include "tlb_stats.h"
 
@@ -44,16 +45,17 @@ class tlb_t : public caching_device_t {
 public:
     bool
     init(int associativity, int block_size, int num_blocks, caching_device_t *parent,
-         caching_device_stats_t *stats, prefetcher_t *prefetcher = nullptr,
+         caching_device_stats_t *stats, tlb_prefetcher_t *prefetcher = nullptr,
          bool inclusive = false, bool coherent_cache = false, int id_ = -1,
          snoop_filter_t *snoop_filter_ = nullptr,
-         const std::vector<caching_device_t *> &children = {}) override;
+         const std::vector<caching_device_t *> &children = {});
     void
     request(const memref_t &memref) override;
 
     // TODO i#4816: The addition of the pid as a lookup parameter beyond just the tag
     // needs to be imposed on the parent methods invalidate(), contains_tag(), and
     // propagate_eviction() by overriding them.
+    tlb_prefetcher_t *tlb_prefetcher_;
 
 protected:
     void

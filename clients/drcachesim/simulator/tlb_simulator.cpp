@@ -58,6 +58,7 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
 {
     itlbs_ = new tlb_t *[knobs_.num_cores];
     dtlbs_ = new tlb_t *[knobs_.num_cores];
+    dtlbs_prefetchers_ = new tlb_prefetcher_t *[knobs_.num_cores];
     lltlbs_ = new tlb_t;
     for (unsigned int i = 0; i < knobs_.num_cores; i++) {
         itlbs_[i] = NULL;
@@ -93,13 +94,19 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
             success_ = false;
             return;
         }
+        dtlbs_prefetchers_[i] = create_tlb_prefetcher(knobs_.page_size);
+        if (dtlbs_prefetchers_[i] == NULL) {
+            error_string_ = "Failed to create dtlbs_prefetchers_";
+            success_ = false;
+            return;
+        }
 
         if (!itlbs_[i]->init(knobs_.TLB_L1I_assoc, (int)knobs_.page_size,
                              knobs_.TLB_L1I_entries, lltlbs_, new tlb_stats_t((int)knobs_.page_size, i, "ITLB"),
                              NULL, false, false, i) ||
             !dtlbs_[i]->init(knobs_.TLB_L1D_assoc, (int)knobs_.page_size,
                              knobs_.TLB_L1D_entries, lltlbs_, new tlb_stats_t((int)knobs_.page_size, i, "DTLB"),
-                             NULL, false, false, i)) {
+                             dtlbs_prefetchers_[i], false, false, i)) {
             error_string_ =
                 "Usage error: failed to initialize TLbs_. Ensure entry number, "
                 "page size and associativity are powers of 2.";
@@ -231,6 +238,7 @@ tlb_simulator_t::print_results()
             itlbs_[i]->get_stats()->print_stats("    ");
             std::cerr << "  L1D stats:" << std::endl;
             dtlbs_[i]->get_stats()->print_stats("    ");
+            dtlbs_prefetchers_[i]->print_results("    ");
         }
     }
     return true;
@@ -250,5 +258,21 @@ tlb_simulator_t::create_tlb(std::string policy)
     // undefined replacement policy
     ERRMSG("Usage error: undefined replacement policy. "
            "Please choose " REPLACE_POLICY_LFU ".\n");
+    return NULL;
+}
+
+tlb_prefetcher_t *
+tlb_simulator_t::create_tlb_prefetcher(int page_size)
+{
+    // XXX: how to implement different replacement policies?
+    // Should we extend tlb_t to tlb_XXX_t so as to avoid multiple inheritence?
+    // Or should we adopt multiple inheritence to have caching_device_XXX_t as one base
+    // and tlb_t as another base class?
+    if(page_size == 4*1024)
+        return new tlb_prefetcher_t(page_size);
+
+    // undefined replacement policy
+    ERRMSG("Usage error: undefined page size. "
+           "Please choose 4KB.\n");
     return NULL;
 }

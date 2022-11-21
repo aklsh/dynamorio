@@ -37,16 +37,18 @@
 bool
 tlb_t::init(int associativity, int block_size, int total_size,
             caching_device_t *parent, caching_device_stats_t *stats,
-            prefetcher_t *prefetcher, bool inclusive, bool coherent_cache, int id,
+            tlb_prefetcher_t *prefetcher, bool inclusive, bool coherent_cache, int id,
             snoop_filter_t *snoop_filter,
             const std::vector<caching_device_t *> &children)
 {
+    tlb_prefetcher_ = prefetcher;
+
     // Works in the same way as the base class,
     // except that the counters are initialized in a different way.
-
     bool ret_val =
-        caching_device_t::init(associativity, block_size, total_size, parent, stats, prefetcher,
-                      inclusive, coherent_cache, id, snoop_filter, children);
+        caching_device_t::init(associativity, block_size, total_size, parent, stats,
+                               NULL, inclusive, coherent_cache,
+                               id, snoop_filter, children);
     if (ret_val == false)
         return false;
 
@@ -88,6 +90,12 @@ tlb_t::request(const memref_t &memref_in)
     addr_t final_tag = compute_tag(final_addr);
     addr_t tag = compute_tag(memref_in.data.addr);
     memref_pid_t pid = memref_in.data.pid;
+    static int req_count = 0;
+
+    req_count++;
+    if(req_count % 10000 == 0)
+        if(tlb_prefetcher_ != NULL)
+            tlb_prefetcher_->pc_update(memref_in);
 
     // Optimization: check last tag and pid if single-block
     if (tag == final_tag && tag == last_tag_ && pid == last_pid_) {
