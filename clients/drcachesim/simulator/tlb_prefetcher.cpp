@@ -42,7 +42,13 @@
 tlb_prefetcher_t::tlb_prefetcher_t(int page_size_bits)
     : page_size_bits_(page_size_bits)
 {
-    // Nothing else to do.
+    pc_refs_.clear();
+}
+
+tlb_prefetcher_t::~tlb_prefetcher_t()
+{
+    for (auto &it : pc_refs_)
+        delete it.second;
 }
 
 void
@@ -62,20 +68,20 @@ tlb_prefetcher_t::pc_update(const memref_t &memref_in)
     addr_t page = memref_in.data.addr >> page_size_bits_;
 
     bool found = false;
-    for (auto &it : pc_refs_){
-        std::vector<addr_t> v = it.second;
+    for (auto it : pc_refs_){
+        std::vector<addr_t>* v = it.second;
         if(it.first == ip){
             found = true;
-            if (std::find(v.begin(), v.end(), page) == v.end()){
-                v.push_back(page);
+            if (std::find(v->begin(), v->end(), page) == v->end()){
+                v->push_back(page);
             }
             break;
         }
     }
     if (found == false){
-        std::vector<addr_t> v;
-        v.push_back(page);
-        pc_refs_.push_back(std::make_pair(ip, v));
+        std::vector<addr_t>* v = new std::vector<addr_t>;
+        v->push_back(page);
+        pc_refs_.insert(std::pair<addr_t, std::vector<addr_t>*>(ip, v));
     }
 }
 
@@ -83,10 +89,10 @@ void
 tlb_prefetcher_t::print_results(std::string prefix)
 {
     for (auto &it : pc_refs_){
-        std::cerr << prefix << "PC: " << std::hex << "0x" << it.first << std::dec << std::endl;
-        std::vector<addr_t> v = it.second;
-        for (auto it_v : v){
-            std::cerr << prefix << prefix << std::hex << it_v <<std::dec << std::endl;
+        std::cerr << prefix << "PC: " << std::hex << "0x" << it.first << std::dec << "(" << it.second->size() << ")" << std::endl;
+        std::vector<addr_t>* v = it.second;
+        for (auto it_v : *v){
+            std::cerr << prefix << prefix << "0x" << std::hex << it_v <<std::dec << std::endl;
         }
     }
 }

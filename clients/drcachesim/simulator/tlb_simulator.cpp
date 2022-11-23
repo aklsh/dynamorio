@@ -94,7 +94,7 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
             success_ = false;
             return;
         }
-        dtlbs_prefetchers_[i] = create_tlb_prefetcher(knobs_.page_size);
+        dtlbs_prefetchers_[i] = create_tlb_prefetcher(12);
         if (dtlbs_prefetchers_[i] == NULL) {
             error_string_ = "Failed to create dtlbs_prefetchers_";
             success_ = false;
@@ -262,14 +262,14 @@ tlb_simulator_t::create_tlb(std::string policy)
 }
 
 tlb_prefetcher_t *
-tlb_simulator_t::create_tlb_prefetcher(int page_size)
+tlb_simulator_t::create_tlb_prefetcher(int page_size_bits)
 {
     // XXX: how to implement different replacement policies?
     // Should we extend tlb_t to tlb_XXX_t so as to avoid multiple inheritence?
     // Or should we adopt multiple inheritence to have caching_device_XXX_t as one base
     // and tlb_t as another base class?
-    if(page_size == 4*1024)
-        return new tlb_prefetcher_t(page_size);
+    if(page_size_bits == 12)
+        return new tlb_prefetcher_t(page_size_bits);
 
     // undefined replacement policy
     ERRMSG("Usage error: undefined page size. "

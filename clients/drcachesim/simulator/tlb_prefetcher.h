@@ -39,17 +39,18 @@
 #include "tlb.h"
 #include "trace_entry.h"
 #include "memref.h"
+#include <unordered_map>
 
 class tlb_t;
 
 class tlb_prefetcher_t {
 private:
     int page_size_bits_;
-    std::vector<std::pair<addr_t, std::vector<addr_t>>> pc_refs_;
+    std::unordered_map<addr_t, std::vector<addr_t>*> pc_refs_;
 
 public:
     tlb_prefetcher_t(int page_size);
-    virtual ~tlb_prefetcher_t() { }
+    virtual ~tlb_prefetcher_t();
     virtual void
     prefetch(tlb_t *tlb, const memref_t &memref);
     void
