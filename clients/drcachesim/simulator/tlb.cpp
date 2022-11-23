@@ -90,11 +90,11 @@ tlb_t::request(const memref_t &memref_in)
     addr_t final_tag = compute_tag(final_addr);
     addr_t tag = compute_tag(memref_in.data.addr);
     memref_pid_t pid = memref_in.data.pid;
-    static int req_count = 0;
+    // static int req_count = 0;
 
-    req_count++;
-    if(req_count % 10000 == 0)
-        if(tlb_prefetcher_ != NULL)
+    // req_count++;
+    // if(req_count % 10 == 0)
+       if(tlb_prefetcher_ != NULL)
             tlb_prefetcher_->pc_update(memref_in);
 
     // Optimization: check last tag and pid if single-block
