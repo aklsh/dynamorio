@@ -43,6 +43,8 @@ class tlb_stats_t : public caching_device_stats_t {
 protected:
     int id_;
     std::string type_;
+    int_least64_t num_prefetches_requested_;
+    int_least64_t num_prefetches_requested_at_reset_;
 
 public:
     explicit tlb_stats_t(int block_size, int id = -1, std::string type = "");
@@ -50,9 +52,12 @@ public:
 
     // It might be necessary to report stats of exceptions
     // triggered by address translation, e.g., address unaligned exception.
-
     void
-    check_compulsory_miss(addr_t addr) override;
+    access(const memref_t &memref, bool hit, caching_device_block_t *cache_block) override;
+    void
+    print_counts(std::string prefix) override;
+    void
+    reset() override;
 };
 
 #endif /* _TLB_STATS_H_ */

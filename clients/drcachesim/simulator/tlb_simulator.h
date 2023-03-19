@@ -57,17 +57,13 @@ protected:
     virtual tlb_t *
     create_tlb(std::string policy);
 
-    // Create a tlb_prefetcher_t object with a specific page size.
-    virtual tlb_prefetcher_t *
-    create_tlb_prefetcher(int page_size);
-
     tlb_simulator_knobs_t knobs_;
 
     // Each CPU core contains a L1 ITLB, L1 DTLB and L2 TLB.
     // All of them are private to the core.
     tlb_t **itlbs_;
     tlb_t **dtlbs_;
-    tlb_prefetcher_t **dtlbs_prefetchers_;
+    tlb_prefetcher_ghb_t *dtlb_prefetcher_;
     tlb_t *lltlbs_;
 };
 

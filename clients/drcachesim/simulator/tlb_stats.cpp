@@ -39,22 +39,70 @@ tlb_stats_t::tlb_stats_t(int block_size, int id, std::string type)
     , id_(id)
     , type_(type)
 {
-
+    num_prefetches_requested_ = 0;
+    num_prefetches_requested_at_reset_ = 0;
 }
-void tlb_stats_t::check_compulsory_miss(addr_t addr)
-{
-    auto lookup_pair = access_count_.lookup(addr);
 
-    // If the address has never been accessed insert proper bound into access_count_
-    // and count it as a compulsory miss.
-    if (!lookup_pair.first) {
-        if(type_ == "alskj"){
-            int block_size_bits = compute_log2(1<<12);
-            int block_size_mask = ~((1 << block_size_bits) - 1);
-            addr_t page_num = addr & block_size_mask;
-            std::cerr << "CPU " << id_ << " " << type_ << " " << std::hex << page_num << std::dec << std::endl;
+void
+tlb_stats_t::access(const memref_t &memref, bool hit,
+                    caching_device_block_t *cache_block)
+{
+    // We assume we're single-threaded.
+    // We're only computing miss rate so we just inc counters here.
+    if (hit)
+        num_hits_++;
+    else {
+        if (memref.data.type != TRACE_TYPE_HARDWARE_PREFETCH){
+            num_misses_++;
+            if (dump_misses_)
+                dump_miss(memref);
+
+            check_compulsory_miss(memref.data.addr);
         }
-        num_compulsory_misses_++;
-        access_count_.insert(addr, lookup_pair.second);
     }
+
+    if (memref.data.type == TRACE_TYPE_HARDWARE_PREFETCH)
+        num_prefetches_requested_++;
+}
+
+void
+tlb_stats_t::print_counts(std::string prefix)
+{
+    std::cerr << prefix << std::setw(18) << std::left << "Hits:" << std::setw(20)
+              << std::right << num_hits_ << std::endl;
+    std::cerr << prefix << std::setw(18) << std::left << "Prefetches:" << std::setw(20)
+              << std::right << num_prefetches_requested_ << std::endl;
+    std::cerr << prefix << std::setw(18) << std::left << "Misses:" << std::setw(20)
+              << std::right << num_misses_ << std::endl;
+    std::cerr << prefix << std::setw(18) << std::left
+              << "Compulsory misses:" << std::setw(20) << std::right
+              << num_compulsory_misses_ << std::endl;
+    if (is_coherent_) {
+        std::cerr << prefix << std::setw(21) << std::left
+                  << "Parent invalidations:" << std::setw(17) << std::right
+                  << num_inclusive_invalidates_ << std::endl;
+        std::cerr << prefix << std::setw(20) << std::left
+                  << "Write invalidations:" << std::setw(18) << std::right
+                  << num_coherence_invalidates_ << std::endl;
+    } else {
+        std::cerr << prefix << std::setw(18) << std::left
+                  << "Invalidations:" << std::setw(20) << std::right
+                  << num_inclusive_invalidates_ << std::endl;
+    }
+}
+
+void
+tlb_stats_t::reset()
+{
+    num_hits_at_reset_ = num_hits_;
+    num_misses_at_reset_ = num_misses_;
+    num_child_hits_at_reset_ = num_child_hits_;
+    num_prefetches_requested_at_reset_ = num_prefetches_requested_;
+    num_hits_ = 0;
+    num_prefetches_requested_ = 0;
+    num_misses_ = 0;
+    num_compulsory_misses_ = 0;
+    num_child_hits_ = 0;
+    num_inclusive_invalidates_ = 0;
+    num_coherence_invalidates_ = 0;
 }

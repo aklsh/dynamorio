@@ -35,13 +35,16 @@
 
 #include "tlb.h"
 #include "../common/memref.h"
+#include "../common/utils.h"
+
 #include <algorithm>
 #include <utility>
 #include <iostream>
 
-tlb_prefetcher_t::tlb_prefetcher_t(int page_size_bits)
-    : page_size_bits_(page_size_bits)
+tlb_prefetcher_t::tlb_prefetcher_t(int page_size)
 {
+    page_size_ = page_size;
+    page_size_bits_ = compute_log2(page_size);
     pc_refs_.clear();
 }
 
@@ -54,9 +57,9 @@ tlb_prefetcher_t::~tlb_prefetcher_t()
 void
 tlb_prefetcher_t::prefetch(tlb_t *tlb, const memref_t &memref_in)
 {
-    // We implement a simple next-line prefetcher.
+    // We implement a simple next-page prefetcher.
     memref_t memref = memref_in;
-    memref.data.addr += 64;
+    memref.data.addr += page_size_;
     memref.data.type = TRACE_TYPE_HARDWARE_PREFETCH;
     tlb->request(memref);
 }
@@ -67,6 +70,7 @@ tlb_prefetcher_t::pc_update(const memref_t &memref_in)
     addr_t ip = memref_in.data.pc;
     addr_t page = memref_in.data.addr >> page_size_bits_;
 
+    // Update PC Map with Page number accessed
     bool found = false;
     for (auto it : pc_refs_){
         std::vector<addr_t>* v = it.second;
@@ -89,10 +93,11 @@ void
 tlb_prefetcher_t::print_results(std::string prefix)
 {
     for (auto &it : pc_refs_){
-        std::cerr << prefix << "PC: " << std::hex << "0x" << it.first << std::dec << "(" << it.second->size() << ")" << std::endl;
+        std::cerr << prefix << "PC: " << std::hex << "0x" << it.first << std::dec << "(" << it.second->size() << ")" << "\t";
         std::vector<addr_t>* v = it.second;
         for (auto it_v : *v){
-            std::cerr << prefix << prefix << "0x" << std::hex << it_v <<std::dec << std::endl;
+            std::cerr << prefix << prefix << "0x" << std::hex << it_v << std::dec << "\t";
         }
+        std::cerr << std::endl;
     }
 }

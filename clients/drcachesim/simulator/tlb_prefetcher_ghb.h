@@ -1,5 +1,5 @@
 /* **********************************************************
- * Copyright (c) 2015-2021 Google, Inc.  All rights reserved.
+ * Copyright (c) 2017-2020 Google, Inc.  All rights reserved.
  * **********************************************************/
 
 /*
@@ -30,44 +30,57 @@
  * DAMAGE.
  */
 
-/* tlb: represents a single hardware TLB.
+/* prefetcher: represents a hardware prefetching implementation.
  */
 
-#ifndef _TLB_H_
-#define _TLB_H_ 1
+#ifndef _TLB_PREFETCHER_GHB_H_
+#define _TLB_PREFETCHER_GHB_H_ 1
 
-#include "caching_device.h"
-#include "tlb_prefetcher_ghb.h"
-#include "tlb_entry.h"
-#include "tlb_stats.h"
+#include "tlb.h"
+#include "trace_entry.h"
+#include "memref.h"
+#include <unordered_map>
 
-class tlb_t : public caching_device_t {
-public:
-    bool
-    init(int associativity, int block_size, int num_blocks, caching_device_t *parent,
-         caching_device_stats_t *stats, tlb_prefetcher_ghb_t *prefetcher = nullptr,
-         bool inclusive = false, bool coherent_cache = false, int id_ = -1,
-         snoop_filter_t *snoop_filter_ = nullptr,
-         const std::vector<caching_device_t *> &children = {});
-    void
-    request(const memref_t &memref) override;
+#define DELTA_HISTORY_LENGTH 8
+#define PAGE_SIZE 4096
+#define PAGE_SIZE_BITS 12
 
-    // TODO i#4816: The addition of the pid as a lookup parameter beyond just the tag
-    // needs to be imposed on the parent methods invalidate(), contains_tag(), and
-    // propagate_eviction() by overriding them.
-    tlb_prefetcher_ghb_t *tlb_prefetcher_;
+class tlb_t;
 
-protected:
-    void
-    init_blocks() override;
-    void
-    access_update(int block_idx, int way) override;
-    int
-    replace_which_way(int block_idx) override;
-    int
-    get_next_way_to_replace(const int block_idx) const override;
-    // Optimization: remember last pid in addition to last tag
-    memref_pid_t last_pid_;
+// boost library hashing algorithm
+struct delta_hash {
+    std::size_t operator()(const std::array<int_least64_t, DELTA_HISTORY_LENGTH>& a) const {
+        std::size_t h = 0;
+        for (auto e : a) {
+            h ^= std::hash<int>{}(e)  + 0x9e3779b9 + (h << 6) + (h >> 2);
+        }
+        return h;
+    }
 };
 
-#endif /* _TLB_H_ */
+class ghb_entry_t {
+public:
+    addr_t pc;
+    addr_t prev_page;
+    std::unordered_map<std::array<int_least64_t, DELTA_HISTORY_LENGTH> , int_least64_t, delta_hash> delta_lookup_;
+    std::array<int_least64_t, DELTA_HISTORY_LENGTH> deltas_;
+    uint8_t cpu_;
+
+    ghb_entry_t(uint8_t cpu);
+    int_least64_t
+    update_state(addr_t curr_page);
+};
+
+class tlb_prefetcher_ghb_t {
+private:
+    std::vector<std::vector<ghb_entry_t*>> ghb_;
+
+public:
+    tlb_prefetcher_ghb_t(uint8_t num_cpus);
+    void
+    prefetch(tlb_t *tlb, const memref_t &memref, uint8_t cpu);
+    void
+    print_results(std::string prefix, uint8_t cpu_id);
+};
+
+#endif /* _TLB_PREFETCHER_GHB_H_ */

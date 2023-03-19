@@ -152,6 +152,7 @@ drmemtrace_analysis_tool_create()
         tlb_simulator_knobs_t knobs;
         knobs.num_cores = op_num_cores.get_value();
         knobs.page_size = op_page_size.get_value();
+        knobs.TLB_prefetcher_history_len = op_TLB_prefetcher_history_len.get_value();
         knobs.TLB_L1I_entries = op_TLB_L1I_entries.get_value();
         knobs.TLB_L1D_entries = op_TLB_L1D_entries.get_value();
         knobs.TLB_L1I_assoc = op_TLB_L1I_assoc.get_value();

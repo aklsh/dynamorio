@@ -45,6 +45,7 @@ class tlb_t;
 
 class tlb_prefetcher_t {
 private:
+    int page_size_;
     int page_size_bits_;
     std::unordered_map<addr_t, std::vector<addr_t>*> pc_refs_;
 

@@ -33,11 +33,12 @@
 #include "tlb.h"
 #include "../common/utils.h"
 #include <assert.h>
+#include <iostream>
 
 bool
 tlb_t::init(int associativity, int block_size, int total_size,
             caching_device_t *parent, caching_device_stats_t *stats,
-            tlb_prefetcher_t *prefetcher, bool inclusive, bool coherent_cache, int id,
+            tlb_prefetcher_ghb_t *prefetcher, bool inclusive, bool coherent_cache, int id,
             snoop_filter_t *snoop_filter,
             const std::vector<caching_device_t *> &children)
 {
@@ -90,12 +91,6 @@ tlb_t::request(const memref_t &memref_in)
     addr_t final_tag = compute_tag(final_addr);
     addr_t tag = compute_tag(memref_in.data.addr);
     memref_pid_t pid = memref_in.data.pid;
-    // static int req_count = 0;
-
-    // req_count++;
-    // if(req_count % 10 == 0)
-       if(tlb_prefetcher_ != NULL)
-            tlb_prefetcher_->pc_update(memref_in);
 
     // Optimization: check last tag and pid if single-block
     if (tag == final_tag && tag == last_tag_ && pid == last_pid_) {
@@ -105,6 +100,8 @@ tlb_t::request(const memref_t &memref_in)
         assert(tag != TAG_INVALID && tag == tlb_entry->tag_ &&
                pid == ((tlb_entry_t *)tlb_entry)->pid_);
         record_access_stats(memref_in, true /*hit*/, tlb_entry);
+        // if (memref.data.type == TRACE_TYPE_HARDWARE_PREFETCH)
+        //     std::cerr << "Found prefetcher request hit" << std::endl;
         access_update(last_block_idx_, last_way_);
         return;
     }
@@ -113,6 +110,7 @@ tlb_t::request(const memref_t &memref_in)
     for (; tag <= final_tag; ++tag) {
         int way;
         int block_idx = compute_block_idx(tag);
+        bool missed = false;
 
         if (tag + 1 <= final_tag)
             memref.data.size = ((tag + 1) << block_size_bits_) - memref.data.addr;
@@ -120,6 +118,8 @@ tlb_t::request(const memref_t &memref_in)
         for (way = 0; way < associativity_; ++way) {
             caching_device_block_t *tlb_entry = &get_caching_device_block(block_idx, way);
             if (tlb_entry->tag_ == tag && ((tlb_entry_t *)tlb_entry)->pid_ == pid) {
+                // if (memref.data.type == TRACE_TYPE_HARDWARE_PREFETCH)
+                //     std::cerr << "Found prefetcher request hit" << std::endl;
                 record_access_stats(memref, true /*hit*/, tlb_entry);
                 break;
             }
@@ -128,7 +128,7 @@ tlb_t::request(const memref_t &memref_in)
         if (way == associativity_) {
             way = replace_which_way(block_idx);
             caching_device_block_t *tlb_entry = &get_caching_device_block(block_idx, way);
-
+            missed = true;
             record_access_stats(memref, false /*miss*/, tlb_entry);
             // If no parent we assume we get the data from main memory
             if (parent_ != NULL)
@@ -142,11 +142,19 @@ tlb_t::request(const memref_t &memref_in)
 
         access_update(block_idx, way);
 
+        // Issue a hardware prefetch, if any, before we remember the last tag,
+        // so we remember this line and not the prefetched line.
+        if (missed && !type_is_prefetch(memref.data.type) && tlb_prefetcher_ != nullptr){
+            // std::cerr << "Doing prefetch inside tlb.cpp for CPU " << id_ << std::endl;
+            tlb_prefetcher_->prefetch(this, memref, id_);
+        }
+
         if (tag + 1 <= final_tag) {
             addr_t next_addr = (tag + 1) << block_size_bits_;
             memref.data.addr = next_addr;
             memref.data.size = final_addr - next_addr + 1 /*undo the -1*/;
         }
+
         // Optimization: remember last tag and pid
         last_tag_ = tag;
         last_way_ = way;

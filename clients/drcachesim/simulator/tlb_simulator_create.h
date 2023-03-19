@@ -52,13 +52,14 @@ struct tlb_simulator_knobs_t {
     tlb_simulator_knobs_t()
         : num_cores(4)
         , page_size(4 * 1024)
+        , TLB_prefetcher_history_len(1)
         , TLB_L1I_entries(32)
         , TLB_L1D_entries(32)
         , TLB_L1I_assoc(32)
         , TLB_L1D_assoc(32)
         , TLB_L2_entries(1024)
         , TLB_L2_assoc(4)
-        , TLB_replace_policy("LFU")
+        , TLB_replace_policy("LRU")
         , skip_refs(0)
         , warmup_refs(0)
         , warmup_fraction(0.0)
@@ -70,6 +71,7 @@ struct tlb_simulator_knobs_t {
     }
     unsigned int num_cores;
     uint64_t page_size;
+    unsigned int TLB_prefetcher_history_len;
     unsigned int TLB_L1I_entries;
     unsigned int TLB_L1D_entries;
     unsigned int TLB_L1I_assoc;

@@ -58,7 +58,8 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
 {
     itlbs_ = new tlb_t *[knobs_.num_cores];
     dtlbs_ = new tlb_t *[knobs_.num_cores];
-    dtlbs_prefetchers_ = new tlb_prefetcher_t *[knobs_.num_cores];
+    // dtlb_prefetcher_ = new tlb_prefetcher_ghb_t(knobs_.num_cores);
+    dtlb_prefetcher_ = NULL;
     lltlbs_ = new tlb_t;
     for (unsigned int i = 0; i < knobs_.num_cores; i++) {
         itlbs_[i] = NULL;
@@ -75,7 +76,7 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
                       knobs_.TLB_L2_entries, NULL,
                       new tlb_stats_t((int)knobs_.page_size))) {
         error_string_ =
-            "Usage error: failed to initialize TLbs_. Ensure entry number, "
+            "Usage error: failed to initialize lltlbs_. Ensure entry number, "
             "page size and associativity are powers of 2.";
         success_ = false;
         return;
@@ -94,21 +95,14 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
             success_ = false;
             return;
         }
-        dtlbs_prefetchers_[i] = create_tlb_prefetcher(12);
-        if (dtlbs_prefetchers_[i] == NULL) {
-            error_string_ = "Failed to create dtlbs_prefetchers_";
-            success_ = false;
-            return;
-        }
-
         if (!itlbs_[i]->init(knobs_.TLB_L1I_assoc, (int)knobs_.page_size,
                              knobs_.TLB_L1I_entries, lltlbs_, new tlb_stats_t((int)knobs_.page_size, i, "ITLB"),
                              NULL, false, false, i) ||
             !dtlbs_[i]->init(knobs_.TLB_L1D_assoc, (int)knobs_.page_size,
                              knobs_.TLB_L1D_entries, lltlbs_, new tlb_stats_t((int)knobs_.page_size, i, "DTLB"),
-                             dtlbs_prefetchers_[i], false, false, i)) {
+                             dtlb_prefetcher_, false, false, i)) {
             error_string_ =
-                "Usage error: failed to initialize TLbs_. Ensure entry number, "
+                "Usage error: failed to initialize {i,d}tlbs_. Ensure entry number, "
                 "page size and associativity are powers of 2.";
             success_ = false;
             return;
@@ -133,6 +127,7 @@ tlb_simulator_t::~tlb_simulator_t()
         return;
     delete lltlbs_->get_stats();
     delete lltlbs_;
+    delete dtlb_prefetcher_;
     delete[] itlbs_;
     delete[] dtlbs_;
 }
@@ -185,17 +180,17 @@ tlb_simulator_t::process_memref(const memref_t &memref)
     if (type_is_instr(simref->instr.type))
         itlbs_[core]->request(*simref);
     else if (simref->data.type == TRACE_TYPE_READ ||
-             simref->data.type == TRACE_TYPE_WRITE)
+             simref->data.type == TRACE_TYPE_WRITE ||
+             type_is_prefetch(simref->data.type))
         dtlbs_[core]->request(*simref);
     else if (simref->exit.type == TRACE_TYPE_THREAD_EXIT) {
         handle_thread_exit(simref->exit.tid);
         last_thread_ = 0;
-    } else if (type_is_prefetch(simref->data.type) ||
-               simref->flush.type == TRACE_TYPE_INSTR_FLUSH ||
+    } else if (simref->flush.type == TRACE_TYPE_INSTR_FLUSH ||
                simref->flush.type == TRACE_TYPE_DATA_FLUSH ||
                simref->marker.type == TRACE_TYPE_MARKER ||
                simref->marker.type == TRACE_TYPE_INSTR_NO_FETCH) {
-        // TLB simulator ignores prefetching, cache flushing, and markers
+        // TLB simulator ignores cache flushing, and markers
     } else {
         error_string_ = "Unhandled memref type " + std::to_string(simref->data.type);
         return false;
@@ -229,16 +224,17 @@ bool
 tlb_simulator_t::print_results()
 {
     std::cerr << "TLB simulation results:\n";
-    std::cerr << "  LL stats:" << std::endl;
-    lltlbs_->get_stats()->print_stats("    ");
+    // std::cerr << "  LL stats:" << std::endl;
+    // lltlbs_->get_stats()->print_stats("    ");
     for (unsigned int i = 0; i < knobs_.num_cores; i++) {
         print_core(i);
         if (thread_ever_counts_[i] > 0) {
-            std::cerr << "  L1I stats:" << std::endl;
-            itlbs_[i]->get_stats()->print_stats("    ");
+            // std::cerr << "  L1I stats:" << std::endl;
+            // itlbs_[i]->get_stats()->print_stats("    ");
             std::cerr << "  L1D stats:" << std::endl;
             dtlbs_[i]->get_stats()->print_stats("    ");
-            dtlbs_prefetchers_[i]->print_results("    ");
+            // if (dtlb_prefetcher_ != NULL)
+            //     dtlb_prefetcher_->print_results("    ", i);
         }
     }
     return true;
@@ -252,27 +248,11 @@ tlb_simulator_t::create_tlb(std::string policy)
     // Or should we adopt multiple inheritence to have caching_device_XXX_t as one base
     // and tlb_t as another base class?
     if (policy == REPLACE_POLICY_NON_SPECIFIED || // default LFU
-        policy == REPLACE_POLICY_LFU)             // set to LFU
+        policy == REPLACE_POLICY_LRU)             // set to LFU
         return new tlb_t;
 
     // undefined replacement policy
     ERRMSG("Usage error: undefined replacement policy. "
-           "Please choose " REPLACE_POLICY_LFU ".\n");
-    return NULL;
-}
-
-tlb_prefetcher_t *
-tlb_simulator_t::create_tlb_prefetcher(int page_size_bits)
-{
-    // XXX: how to implement different replacement policies?
-    // Should we extend tlb_t to tlb_XXX_t so as to avoid multiple inheritence?
-    // Or should we adopt multiple inheritence to have caching_device_XXX_t as one base
-    // and tlb_t as another base class?
-    if(page_size_bits == 12)
-        return new tlb_prefetcher_t(page_size_bits);
-
-    // undefined replacement policy
-    ERRMSG("Usage error: undefined page size. "
-           "Please choose 4KB.\n");
+           "Please choose " REPLACE_POLICY_LRU ".\n");
     return NULL;
 }

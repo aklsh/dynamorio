@@ -1,5 +1,5 @@
 /* **********************************************************
- * Copyright (c) 2015-2021 Google, Inc.  All rights reserved.
+ * Copyright (c) 2017-2020 Google, Inc.  All rights reserved.
  * **********************************************************/
 
 /*
@@ -30,44 +30,23 @@
  * DAMAGE.
  */
 
-/* tlb: represents a single hardware TLB.
+/* prefetcher: represents a hardware prefetching implementation.
  */
 
-#ifndef _TLB_H_
-#define _TLB_H_ 1
+#include "tlb.h"
+#include "../common/memref.h"
+#include "../common/utils.h"
 
-#include "caching_device.h"
-#include "tlb_prefetcher_ghb.h"
-#include "tlb_entry.h"
-#include "tlb_stats.h"
+#include <algorithm>
+#include <utility>
+#include <iostream>
 
-class tlb_t : public caching_device_t {
-public:
-    bool
-    init(int associativity, int block_size, int num_blocks, caching_device_t *parent,
-         caching_device_stats_t *stats, tlb_prefetcher_ghb_t *prefetcher = nullptr,
-         bool inclusive = false, bool coherent_cache = false, int id_ = -1,
-         snoop_filter_t *snoop_filter_ = nullptr,
-         const std::vector<caching_device_t *> &children = {});
-    void
-    request(const memref_t &memref) override;
-
-    // TODO i#4816: The addition of the pid as a lookup parameter beyond just the tag
-    // needs to be imposed on the parent methods invalidate(), contains_tag(), and
-    // propagate_eviction() by overriding them.
-    tlb_prefetcher_ghb_t *tlb_prefetcher_;
-
-protected:
-    void
-    init_blocks() override;
-    void
-    access_update(int block_idx, int way) override;
-    int
-    replace_which_way(int block_idx) override;
-    int
-    get_next_way_to_replace(const int block_idx) const override;
-    // Optimization: remember last pid in addition to last tag
-    memref_pid_t last_pid_;
-};
-
-#endif /* _TLB_H_ */
+void
+tlb_prefetcher_nextpage_t::prefetch(tlb_t *tlb, const memref_t &memref_in)
+{
+    // We implement a simple next-page prefetcher.
+    memref_t memref = memref_in;
+    memref.data.addr += PAGE_SIZE;
+    memref.data.type = TRACE_TYPE_HARDWARE_PREFETCH;
+    tlb->request(memref);
+}
