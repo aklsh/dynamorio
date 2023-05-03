@@ -58,8 +58,8 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
 {
     itlbs_ = new tlb_t *[knobs_.num_cores];
     dtlbs_ = new tlb_t *[knobs_.num_cores];
-    // dtlb_prefetcher_ = new tlb_prefetcher_ghb_t(knobs_.num_cores);
-    dtlb_prefetcher_ = NULL;
+    dtlb_prefetcher_ = new tlb_prefetcher_ghb_t(knobs_.num_cores);
+    // dtlb_prefetcher_ = NULL;
     lltlbs_ = new tlb_t;
     for (unsigned int i = 0; i < knobs_.num_cores; i++) {
         itlbs_[i] = NULL;
@@ -223,20 +223,31 @@ tlb_simulator_t::process_memref(const memref_t &memref)
 bool
 tlb_simulator_t::print_results()
 {
+    int_least64_t avg_misses = 0;
+    unsigned int thread_count = 0;
+
     std::cerr << "TLB simulation results:\n";
     // std::cerr << "  LL stats:" << std::endl;
     // lltlbs_->get_stats()->print_stats("    ");
     for (unsigned int i = 0; i < knobs_.num_cores; i++) {
         print_core(i);
         if (thread_ever_counts_[i] > 0) {
+            thread_count += 1;
             // std::cerr << "  L1I stats:" << std::endl;
             // itlbs_[i]->get_stats()->print_stats("    ");
             std::cerr << "  L1D stats:" << std::endl;
             dtlbs_[i]->get_stats()->print_stats("    ");
-            // if (dtlb_prefetcher_ != NULL)
-            //     dtlb_prefetcher_->print_results("    ", i);
+            avg_misses += dtlbs_[i]->get_stats()->get_metric(metric_name_t::MISSES);
+            if (dtlb_prefetcher_ != NULL)
+                dtlb_prefetcher_->print_results("    ", i);
         }
     }
+    std::cerr << "Average L1D Misses:" << (long double) (avg_misses/thread_count) << std::endl;
+    for (unsigned int i = 0; i < knobs_.num_cores; i++) {
+        if (thread_ever_counts_[i] > 0)
+            std::cerr << dtlbs_[i]->get_stats()->get_metric(metric_name_t::MISSES) << ", " << dtlbs_[i]->get_stats()->get_metric(metric_name_t::COMPULSORY_MISSES) << std::endl;
+    }
+
     return true;
 }
 

@@ -36,10 +36,9 @@
 #include <iostream>
 
 bool
-tlb_t::init(int associativity, int block_size, int total_size,
-            caching_device_t *parent, caching_device_stats_t *stats,
-            tlb_prefetcher_ghb_t *prefetcher, bool inclusive, bool coherent_cache, int id,
-            snoop_filter_t *snoop_filter,
+tlb_t::init(int associativity, int block_size, int total_size, caching_device_t *parent,
+            caching_device_stats_t *stats, tlb_prefetcher_ghb_t *prefetcher,
+            bool inclusive, bool coherent_cache, int id, snoop_filter_t *snoop_filter,
             const std::vector<caching_device_t *> &children)
 {
     tlb_prefetcher_ = prefetcher;
@@ -47,9 +46,8 @@ tlb_t::init(int associativity, int block_size, int total_size,
     // Works in the same way as the base class,
     // except that the counters are initialized in a different way.
     bool ret_val =
-        caching_device_t::init(associativity, block_size, total_size, parent, stats,
-                               NULL, inclusive, coherent_cache,
-                               id, snoop_filter, children);
+        caching_device_t::init(associativity, block_size, total_size, parent, stats, NULL,
+                               inclusive, coherent_cache, id, snoop_filter, children);
     if (ret_val == false)
         return false;
 
@@ -91,6 +89,7 @@ tlb_t::request(const memref_t &memref_in)
     addr_t final_tag = compute_tag(final_addr);
     addr_t tag = compute_tag(memref_in.data.addr);
     memref_pid_t pid = memref_in.data.pid;
+    bool missed = false;
 
     // Optimization: check last tag and pid if single-block
     if (tag == final_tag && tag == last_tag_ && pid == last_pid_) {
@@ -100,8 +99,6 @@ tlb_t::request(const memref_t &memref_in)
         assert(tag != TAG_INVALID && tag == tlb_entry->tag_ &&
                pid == ((tlb_entry_t *)tlb_entry)->pid_);
         record_access_stats(memref_in, true /*hit*/, tlb_entry);
-        // if (memref.data.type == TRACE_TYPE_HARDWARE_PREFETCH)
-        //     std::cerr << "Found prefetcher request hit" << std::endl;
         access_update(last_block_idx_, last_way_);
         return;
     }
@@ -110,7 +107,6 @@ tlb_t::request(const memref_t &memref_in)
     for (; tag <= final_tag; ++tag) {
         int way;
         int block_idx = compute_block_idx(tag);
-        bool missed = false;
 
         if (tag + 1 <= final_tag)
             memref.data.size = ((tag + 1) << block_size_bits_) - memref.data.addr;
@@ -118,8 +114,6 @@ tlb_t::request(const memref_t &memref_in)
         for (way = 0; way < associativity_; ++way) {
             caching_device_block_t *tlb_entry = &get_caching_device_block(block_idx, way);
             if (tlb_entry->tag_ == tag && ((tlb_entry_t *)tlb_entry)->pid_ == pid) {
-                // if (memref.data.type == TRACE_TYPE_HARDWARE_PREFETCH)
-                //     std::cerr << "Found prefetcher request hit" << std::endl;
                 record_access_stats(memref, true /*hit*/, tlb_entry);
                 break;
             }
@@ -138,16 +132,18 @@ tlb_t::request(const memref_t &memref_in)
 
             tlb_entry->tag_ = tag;
             ((tlb_entry_t *)tlb_entry)->pid_ = pid;
+
+            // If miss on a prefetch memref, then it is a new block. So, mark as newly prefetched.
+            if (memref.data.type == TRACE_TYPE_HARDWARE_PREFETCH)
+                ((tlb_entry_t *)tlb_entry)->prefetched_ = true;
         }
 
         access_update(block_idx, way);
 
         // Issue a hardware prefetch, if any, before we remember the last tag,
         // so we remember this line and not the prefetched line.
-        if (missed && !type_is_prefetch(memref.data.type) && tlb_prefetcher_ != nullptr){
-            // std::cerr << "Doing prefetch inside tlb.cpp for CPU " << id_ << std::endl;
-            tlb_prefetcher_->prefetch(this, memref, id_);
-        }
+        if (missed && !type_is_prefetch(memref.data.type) && tlb_prefetcher_ != nullptr)
+            tlb_prefetcher_->prefetch(this, memref, id_, this->stats_->get_metric(metric_name_t::HITS));
 
         if (tag + 1 <= final_tag) {
             addr_t next_addr = (tag + 1) << block_size_bits_;
@@ -161,6 +157,99 @@ tlb_t::request(const memref_t &memref_in)
         last_block_idx_ = block_idx;
         last_pid_ = pid;
     }
+}
+
+bool
+tlb_t::request_status(const memref_t &memref_in)
+{
+    // XXX: any better way to derive caching_device_t::request?
+    // Since pid is needed in a lot of places from the beginning to the end,
+    // it might also not be a good way to write a lot of helper functions
+    // to isolate them.
+    // TODO i#4816: This tag,pid pair lookup needs to be imposed on the parent
+    // methods invalidate(), contains_tag(), and propagate_eviction() by overriding
+    // them.
+
+    // Unfortunately we need to make a copy for our loop so we can pass
+    // the right data struct to the parent and stats collectors.
+    memref_t memref;
+    // We support larger sizes to improve the IPC perf.
+    // This means that one memref could touch multiple blocks.
+    // We treat each block separately for statistics purposes.
+    addr_t final_addr = memref_in.data.addr + memref_in.data.size - 1 /*avoid overflow*/;
+    addr_t final_tag = compute_tag(final_addr);
+    addr_t tag = compute_tag(memref_in.data.addr);
+    memref_pid_t pid = memref_in.data.pid;
+    bool missed = false;
+
+    // Optimization: check last tag and pid if single-block
+    if (tag == final_tag && tag == last_tag_ && pid == last_pid_) {
+        // Make sure last_tag_ and pid are properly in sync.
+        caching_device_block_t *tlb_entry =
+            &get_caching_device_block(last_block_idx_, last_way_);
+        assert(tag != TAG_INVALID && tag == tlb_entry->tag_ &&
+               pid == ((tlb_entry_t *)tlb_entry)->pid_);
+        record_access_stats(memref_in, true /*hit*/, tlb_entry);
+        access_update(last_block_idx_, last_way_);
+        return true;
+    }
+
+    memref = memref_in;
+    for (; tag <= final_tag; ++tag) {
+        int way;
+        int block_idx = compute_block_idx(tag);
+
+        if (tag + 1 <= final_tag)
+            memref.data.size = ((tag + 1) << block_size_bits_) - memref.data.addr;
+
+        for (way = 0; way < associativity_; ++way) {
+            caching_device_block_t *tlb_entry = &get_caching_device_block(block_idx, way);
+            if (tlb_entry->tag_ == tag && ((tlb_entry_t *)tlb_entry)->pid_ == pid) {
+                record_access_stats(memref, true /*hit*/, tlb_entry);
+                break;
+            }
+        }
+
+        if (way == associativity_) {
+            way = replace_which_way(block_idx);
+            caching_device_block_t *tlb_entry = &get_caching_device_block(block_idx, way);
+            missed = true;
+            record_access_stats(memref, false /*miss*/, tlb_entry);
+            // If no parent we assume we get the data from main memory
+            if (parent_ != NULL)
+                parent_->request(memref);
+
+            // XXX: do we need to handle TLB coherency?
+
+            tlb_entry->tag_ = tag;
+            ((tlb_entry_t *)tlb_entry)->pid_ = pid;
+
+            // If miss on a prefetch memref, then it is a new block. So, mark as newly prefetched.
+            if (memref.data.type == TRACE_TYPE_HARDWARE_PREFETCH)
+                ((tlb_entry_t *)tlb_entry)->prefetched_ = true;
+        }
+
+        access_update(block_idx, way);
+
+        // Issue a hardware prefetch, if any, before we remember the last tag,
+        // so we remember this line and not the prefetched line.
+        if (missed && !type_is_prefetch(memref.data.type) && tlb_prefetcher_ != nullptr)
+            tlb_prefetcher_->prefetch(this, memref, id_, this->stats_->get_metric(metric_name_t::HITS));
+
+        if (tag + 1 <= final_tag) {
+            addr_t next_addr = (tag + 1) << block_size_bits_;
+            memref.data.addr = next_addr;
+            memref.data.size = final_addr - next_addr + 1 /*undo the -1*/;
+        }
+
+        // Optimization: remember last tag and pid
+        last_tag_ = tag;
+        last_way_ = way;
+        last_block_idx_ = block_idx;
+        last_pid_ = pid;
+    }
+
+    return missed;
 }
 
 void

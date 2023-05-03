@@ -51,6 +51,9 @@ public:
          const std::vector<caching_device_t *> &children = {});
     void
     request(const memref_t &memref) override;
+    bool
+    request_status(const memref_t &memref_in);
+
 
     // TODO i#4816: The addition of the pid as a lookup parameter beyond just the tag
     // needs to be imposed on the parent methods invalidate(), contains_tag(), and

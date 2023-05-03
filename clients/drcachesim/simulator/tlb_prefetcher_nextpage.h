@@ -39,7 +39,6 @@
 #include "tlb.h"
 #include "trace_entry.h"
 #include "memref.h"
-#include <unordered_map>
 
 #define PAGE_SIZE 4096
 #define PAGE_SIZE_BITS 12

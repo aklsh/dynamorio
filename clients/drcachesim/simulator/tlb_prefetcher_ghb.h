@@ -41,7 +41,7 @@
 #include "memref.h"
 #include <unordered_map>
 
-#define DELTA_HISTORY_LENGTH 8
+#define DELTA_HISTORY_LENGTH 4
 #define PAGE_SIZE 4096
 #define PAGE_SIZE_BITS 12
 
@@ -65,20 +65,22 @@ public:
     std::unordered_map<std::array<int_least64_t, DELTA_HISTORY_LENGTH> , int_least64_t, delta_hash> delta_lookup_;
     std::array<int_least64_t, DELTA_HISTORY_LENGTH> deltas_;
     uint8_t cpu_;
+    uint8_t lru_counter_;
 
     ghb_entry_t(uint8_t cpu);
     int_least64_t
-    update_state(addr_t curr_page);
+    update_state(addr_t curr_page, bool same_cpu);
 };
 
 class tlb_prefetcher_ghb_t {
 private:
     std::vector<std::vector<ghb_entry_t*>> ghb_;
+    uint8_t max_entries_cpu_;
 
 public:
     tlb_prefetcher_ghb_t(uint8_t num_cpus);
     void
-    prefetch(tlb_t *tlb, const memref_t &memref, uint8_t cpu);
+    prefetch(tlb_t *tlb, const memref_t &memref, uint8_t cpu, int_least64_t access_num);
     void
     print_results(std::string prefix, uint8_t cpu_id);
 };

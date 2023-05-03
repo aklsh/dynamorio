@@ -38,6 +38,7 @@
 
 #include <string>
 #include "caching_device_stats.h"
+#include "tlb_entry.h"
 
 class tlb_stats_t : public caching_device_stats_t {
 protected:
@@ -45,6 +46,8 @@ protected:
     std::string type_;
     int_least64_t num_prefetches_requested_;
     int_least64_t num_prefetches_requested_at_reset_;
+    int_least64_t num_prefetches_used_;
+    int_least64_t num_prefetches_used_at_reset_;
 
 public:
     explicit tlb_stats_t(int block_size, int id = -1, std::string type = "");

@@ -51,7 +51,7 @@ ghb_entry_t::ghb_entry_t(uint8_t cpu)
 }
 
 int_least64_t
-ghb_entry_t::update_state(addr_t curr_page)
+ghb_entry_t::update_state(addr_t curr_page, bool same_cpu)
 {
     int_least64_t next_delta, curr_delta;
     bool found = true;
@@ -63,19 +63,22 @@ ghb_entry_t::update_state(addr_t curr_page)
     } else 
         next_delta = delta_lookup_[deltas_];
     
-    // Calculate current delta to update state 
-    curr_delta = curr_page-prev_page;
-    prev_page = curr_page;
+    // update state only if same cpu
+    if (same_cpu) {
+        // Calculate current delta to update state 
+        curr_delta = curr_page-prev_page;
+        prev_page = curr_page;
 
-    // Update delta lookup for current shift register state.
-    if (found==false){
-        delta_lookup_.insert(std::pair<std::array<int_least64_t, DELTA_HISTORY_LENGTH>, int_least64_t>(deltas_, curr_delta));
+        // Update delta lookup for current shift register state.
+        if (found==false){
+            delta_lookup_.insert(std::pair<std::array<int_least64_t, DELTA_HISTORY_LENGTH>, int_least64_t>(deltas_, curr_delta));
+        }
+
+        // Delta shift register
+        for(int i=1;i<DELTA_HISTORY_LENGTH;i++)
+            deltas_[i-1] = deltas_[i];
+        deltas_[DELTA_HISTORY_LENGTH-1] = curr_delta;
     }
-
-    // Delta shift register
-    for(int i=1;i<DELTA_HISTORY_LENGTH;i++)
-        deltas_[i-1] = deltas_[i];
-    deltas_[DELTA_HISTORY_LENGTH-1] = curr_delta;
 
     return next_delta;
 }
@@ -84,31 +87,49 @@ tlb_prefetcher_ghb_t::tlb_prefetcher_ghb_t(uint8_t num_cpus)
 {
     ghb_.reserve(num_cpus);
     ghb_.resize(num_cpus);
-    std::cerr << "Created TLB GHB Prefetcher for " << (int32_t)num_cpus << " CPUs" << std::endl;
+    std::cerr << "Created TLB GHB Prefetcher for " << (int32_t)ghb_.size() << " CPUs" << std::endl;
 }
 
 void
-tlb_prefetcher_ghb_t::prefetch(tlb_t *tlb, const memref_t &memref_in, uint8_t cpu)
+tlb_prefetcher_ghb_t::prefetch(tlb_t *tlb, const memref_t &memref_in, uint8_t cpu, int_least64_t access_num)
 {
     memref_t memref = memref_in;
     addr_t curr_pc = memref.data.pc;
     addr_t curr_page = memref.data.addr >> PAGE_SIZE_BITS;
     ghb_entry_t *curr_entry = nullptr;
     int_least64_t delta_pred;
+    bool request_status = false;
     
+    // check current cpu's buffer
     for (auto entry: ghb_[cpu]) {
         if (entry->pc == curr_pc) {
-            // std::cerr << "Found PC " << curr_pc << " in prefetcher for CPU " << (int) cpu << std::endl;
             curr_entry = entry;
-            // std::cerr << "Seen delta " << curr_page-curr_entry->prev_page << " in prefetcher for CPU " << (int) cpu << std::endl;
-            delta_pred = curr_entry->update_state(curr_page);
+            delta_pred = curr_entry->update_state(curr_page, true);
             if (delta_pred != 0){ // 0 => same page as now, no need to prefetch
-                // std::cerr << "Issuing prefetch request for CPU "<< (int)cpu << " with delta " << delta_pred << std::endl;
                 memref.data.addr += (delta_pred<<PAGE_SIZE_BITS);
                 memref.data.type = TRACE_TYPE_HARDWARE_PREFETCH;
-                tlb->request(memref);
-                // tlb->get_parent()->request(memref);
+                request_status = tlb->request_status(memref);
             }
+            break;
+        }
+    }
+    // check other cpus' buffers if not found
+    for (int i=1;i<ghb_.size();i++){
+        if (i!=cpu){
+            for (auto entry: ghb_[i]) {
+                if (entry->pc == curr_pc) {
+                    curr_entry = entry;
+                    delta_pred = curr_entry->update_state(curr_page, false);
+                    if (delta_pred != 0){ // 0 => same page as now, no need to prefetch
+                        memref.data.addr += (delta_pred<<PAGE_SIZE_BITS);
+                        memref.data.type = TRACE_TYPE_HARDWARE_PREFETCH;
+                        request_status = tlb->request_status(memref);
+                    }
+                    break;
+                }
+            }
+            // if (curr_entry != nullptr) // found in some buffer
+            //     break;
         }
     }
     if (curr_entry == nullptr) {
@@ -116,7 +137,7 @@ tlb_prefetcher_ghb_t::prefetch(tlb_t *tlb, const memref_t &memref_in, uint8_t cp
         // std::cerr << "Found new PC " << curr_pc << " in CPU " << (int) cpu << std::endl;
         curr_entry = new ghb_entry_t(cpu);
         curr_entry->pc = curr_pc;
-        delta_pred = curr_entry->update_state(curr_page);
+        delta_pred = curr_entry->update_state(curr_page, true);
         ghb_[cpu].push_back(curr_entry);
     }
 }
@@ -124,7 +145,9 @@ tlb_prefetcher_ghb_t::prefetch(tlb_t *tlb, const memref_t &memref_in, uint8_t cp
 void
 tlb_prefetcher_ghb_t::print_results(std::string prefix, uint8_t cpu_id)
 {
-    for(auto entry: ghb_[cpu_id]) {
+    std::cerr << prefix << "Entries in GHB: " << ghb_[cpu_id].size() << std::endl;
+
+/*     for(auto entry: ghb_[cpu_id]) {
         std::cerr << prefix << "PC: " << std::hex << "0x" << entry->pc << std::dec << std::endl;
         std::cerr << prefix << "Page deltas: " << std::endl;
         for (auto it_deltas: entry->deltas_){
@@ -138,5 +161,5 @@ tlb_prefetcher_ghb_t::print_results(std::string prefix, uint8_t cpu_id)
             }
             std::cerr << prefix << "\t: " << delta_map_entry.second << std::endl;
         }
-    }
+    } */
 }

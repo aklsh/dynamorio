@@ -38,9 +38,16 @@ tlb_stats_t::tlb_stats_t(int block_size, int id, std::string type)
     : caching_device_stats_t("", block_size)
     , id_(id)
     , type_(type)
+    , num_prefetches_requested_(0)
+    , num_prefetches_requested_at_reset_(0)
+    , num_prefetches_used_(0)
+    , num_prefetches_used_at_reset_(0)
+
 {
-    num_prefetches_requested_ = 0;
-    num_prefetches_requested_at_reset_ = 0;
+    stats_map_.emplace(metric_name_t::PREFETCH_REQUESTS, num_prefetches_requested_);
+    stats_map_.emplace(metric_name_t::PREFETCH_USED, num_prefetches_used_);
+    stats_map_.emplace(metric_name_t::PREFETCH_REQUESTS_AT_RESET, num_prefetches_requested_at_reset_);
+    stats_map_.emplace(metric_name_t::PREFETCH_USED_AT_RESET, num_prefetches_used_at_reset_);
 }
 
 void
@@ -49,8 +56,14 @@ tlb_stats_t::access(const memref_t &memref, bool hit,
 {
     // We assume we're single-threaded.
     // We're only computing miss rate so we just inc counters here.
-    if (hit)
+    if (hit) {
         num_hits_++;
+        if (((tlb_entry_t *)cache_block)->prefetched_ == true){
+            num_prefetches_used_++;
+            // count each prefetched page only once, as after 1st hit it'll already be in TLB
+            ((tlb_entry_t *)cache_block)->prefetched_ = false;
+        }
+    }
     else {
         if (memref.data.type != TRACE_TYPE_HARDWARE_PREFETCH){
             num_misses_++;
@@ -72,11 +85,12 @@ tlb_stats_t::print_counts(std::string prefix)
               << std::right << num_hits_ << std::endl;
     std::cerr << prefix << std::setw(18) << std::left << "Prefetches:" << std::setw(20)
               << std::right << num_prefetches_requested_ << std::endl;
+    std::cerr << prefix << std::setw(18) << std::left << "Used Prefetches:" << std::setw(20)
+              << std::right << num_prefetches_used_ << std::endl;
     std::cerr << prefix << std::setw(18) << std::left << "Misses:" << std::setw(20)
               << std::right << num_misses_ << std::endl;
-    std::cerr << prefix << std::setw(18) << std::left
-              << "Compulsory misses:" << std::setw(20) << std::right
-              << num_compulsory_misses_ << std::endl;
+    std::cerr << prefix << std::setw(18) << std::left << "Compulsory misses:" << std::setw(20)
+              << std::right << num_compulsory_misses_ << std::endl;
     if (is_coherent_) {
         std::cerr << prefix << std::setw(21) << std::left
                   << "Parent invalidations:" << std::setw(17) << std::right
@@ -98,8 +112,10 @@ tlb_stats_t::reset()
     num_misses_at_reset_ = num_misses_;
     num_child_hits_at_reset_ = num_child_hits_;
     num_prefetches_requested_at_reset_ = num_prefetches_requested_;
+    num_prefetches_used_at_reset_ = num_prefetches_used_;
     num_hits_ = 0;
     num_prefetches_requested_ = 0;
+    num_prefetches_used_ = 0;
     num_misses_ = 0;
     num_compulsory_misses_ = 0;
     num_child_hits_ = 0;

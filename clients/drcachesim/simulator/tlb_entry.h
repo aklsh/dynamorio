@@ -45,6 +45,9 @@ public:
     memref_pid_t pid_;
 
     // XXX: support page privilege and MMU-related exceptions
+    
+    // keep track of prefetched entries for accuracy tracking
+    bool prefetched_;
 };
 
 #endif /* _TLB_ENTRY_H_ */
