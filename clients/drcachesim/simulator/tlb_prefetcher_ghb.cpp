@@ -45,42 +45,69 @@ ghb_entry_t::ghb_entry_t(uint8_t cpu)
             : cpu_(cpu)
             , pc(0)
             , prev_page(0)
+            , prev_time(0)
 {
     delta_lookup_.clear();
     deltas_.fill(0);
+    num_access_lookup_.clear();
+    num_accesses_.fill(0);
 }
 
-int_least64_t
-ghb_entry_t::update_state(addr_t curr_page, bool same_cpu)
+std::tuple<int_least64_t, int_least64_t>
+ghb_entry_t::update_state(addr_t curr_page, bool same_cpu, int_least64_t curr_time)
 {
-    int_least64_t next_delta, curr_delta;
-    bool found = true;
+    // std::cerr << "In ghb_entry_t::update_state" << std::endl;
+    int_least64_t next_delta, curr_delta, next_interval, curr_interval;
+    bool found_delta = true;
+    bool found_interval = true;
+
 
     // Get next predicted delta
     if(delta_lookup_.find(deltas_) == delta_lookup_.end()){
-        found = false;
+        found_delta = false;
         next_delta = 0;
-    } else 
+    } else {
         next_delta = delta_lookup_[deltas_];
-    
+    }
+
+    // Get next predicted interval
+    if(num_access_lookup_.find(num_accesses_) == num_access_lookup_.end()){
+        found_interval = false;
+        next_interval = 0;
+    } else {
+        next_interval = num_access_lookup_[num_accesses_];
+    }
+
     // update state only if same cpu
     if (same_cpu) {
         // Calculate current delta to update state 
         curr_delta = curr_page-prev_page;
+        curr_interval = curr_time-prev_time;
         prev_page = curr_page;
 
         // Update delta lookup for current shift register state.
-        if (found==false){
+        if (found_delta==false){
             delta_lookup_.insert(std::pair<std::array<int_least64_t, DELTA_HISTORY_LENGTH>, int_least64_t>(deltas_, curr_delta));
+        }
+        
+        // Update access time lookup for current shift register state.
+        if (found_interval==false){
+            num_access_lookup_.insert(std::pair<std::array<int_least64_t, DELTA_HISTORY_LENGTH>, int_least64_t>(num_accesses_, curr_interval));
         }
 
         // Delta shift register
         for(int i=1;i<DELTA_HISTORY_LENGTH;i++)
             deltas_[i-1] = deltas_[i];
         deltas_[DELTA_HISTORY_LENGTH-1] = curr_delta;
-    }
 
-    return next_delta;
+        // Interval shift register
+        for(int i=1;i<DELTA_HISTORY_LENGTH;i++)
+            num_accesses_[i-1] = num_accesses_[i];
+        num_accesses_[DELTA_HISTORY_LENGTH-1] = curr_interval;
+    }
+    
+    // std::cerr << "In ghb_entry_t::update_state leaving" << std::endl;
+    return {next_delta, next_interval};
 }
 
 tlb_prefetcher_ghb_t::tlb_prefetcher_ghb_t(uint8_t num_cpus)
@@ -97,18 +124,23 @@ tlb_prefetcher_ghb_t::prefetch(tlb_t *tlb, const memref_t &memref_in, uint8_t cp
     addr_t curr_pc = memref.data.pc;
     addr_t curr_page = memref.data.addr >> PAGE_SIZE_BITS;
     ghb_entry_t *curr_entry = nullptr;
-    int_least64_t delta_pred;
+    std::tuple<int_least64_t, int_least64_t> predictor_out;
+    int_least64_t delta_pred, interval_pred;
     bool request_status = false;
     
     // check current cpu's buffer
     for (auto entry: ghb_[cpu]) {
         if (entry->pc == curr_pc) {
             curr_entry = entry;
-            delta_pred = curr_entry->update_state(curr_page, true);
+            predictor_out = curr_entry->update_state(curr_page, true, access_num);
+            delta_pred = std::get<0>(predictor_out);
+            interval_pred = std::get<1>(predictor_out);
             if (delta_pred != 0){ // 0 => same page as now, no need to prefetch
                 memref.data.addr += (delta_pred<<PAGE_SIZE_BITS);
                 memref.data.type = TRACE_TYPE_HARDWARE_PREFETCH;
-                request_status = tlb->request_status(memref);
+                // request_status = tlb->request_status(memref);
+                tlb->prefetch_backlog_.push_back(std::pair<memref_t, int_least64_t>(memref, interval_pred));
+                // tlb->get_parent()->request(memref);
             }
             break;
         }
@@ -119,11 +151,15 @@ tlb_prefetcher_ghb_t::prefetch(tlb_t *tlb, const memref_t &memref_in, uint8_t cp
             for (auto entry: ghb_[i]) {
                 if (entry->pc == curr_pc) {
                     curr_entry = entry;
-                    delta_pred = curr_entry->update_state(curr_page, false);
+                    predictor_out = curr_entry->update_state(curr_page, true, access_num);
+                    delta_pred = std::get<0>(predictor_out);
+                    interval_pred = std::get<1>(predictor_out);
                     if (delta_pred != 0){ // 0 => same page as now, no need to prefetch
                         memref.data.addr += (delta_pred<<PAGE_SIZE_BITS);
                         memref.data.type = TRACE_TYPE_HARDWARE_PREFETCH;
-                        request_status = tlb->request_status(memref);
+                        // request_status = tlb->request_status(memref);
+                        tlb->prefetch_backlog_.push_back(std::pair<memref_t, int_least64_t>(memref, interval_pred));
+                        // tlb->get_parent()->request(memref);
                     }
                     break;
                 }
@@ -137,7 +173,7 @@ tlb_prefetcher_ghb_t::prefetch(tlb_t *tlb, const memref_t &memref_in, uint8_t cp
         // std::cerr << "Found new PC " << curr_pc << " in CPU " << (int) cpu << std::endl;
         curr_entry = new ghb_entry_t(cpu);
         curr_entry->pc = curr_pc;
-        delta_pred = curr_entry->update_state(curr_page, true);
+        predictor_out = curr_entry->update_state(curr_page, true, access_num);
         ghb_[cpu].push_back(curr_entry);
     }
 }

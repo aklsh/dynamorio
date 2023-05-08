@@ -40,6 +40,21 @@
 #include "tlb_prefetcher_ghb.h"
 #include "tlb_entry.h"
 #include "tlb_stats.h"
+#include <queue>
+#include <vector>
+#include "memref.h"
+
+// Structure of the operator
+// overloading for comparison
+struct myComp {
+    constexpr bool operator()(
+        std::pair<memref_t, int_least64_t> const& a,
+        std::pair<memref_t, int_least64_t> const& b)
+        const noexcept
+    {
+        return a.second > b.second;
+    }
+};
 
 class tlb_t : public caching_device_t {
 public:
@@ -47,18 +62,23 @@ public:
     init(int associativity, int block_size, int num_blocks, caching_device_t *parent,
          caching_device_stats_t *stats, tlb_prefetcher_ghb_t *prefetcher = nullptr,
          bool inclusive = false, bool coherent_cache = false, int id_ = -1,
+         std::vector<std::pair<memref_t, int_least64_t>> prefetch_backlog = std::vector<std::pair<memref_t, int_least64_t>>(),
          snoop_filter_t *snoop_filter_ = nullptr,
-         const std::vector<caching_device_t *> &children = {});
+         const std::vector<caching_device_t *> &children = {}
+        );
     void
     request(const memref_t &memref) override;
+    void
+    request_simple(const memref_t &memref);
     bool
     request_status(const memref_t &memref_in);
-
 
     // TODO i#4816: The addition of the pid as a lookup parameter beyond just the tag
     // needs to be imposed on the parent methods invalidate(), contains_tag(), and
     // propagate_eviction() by overriding them.
+
     tlb_prefetcher_ghb_t *tlb_prefetcher_;
+    std::vector<std::pair<memref_t, int_least64_t>> prefetch_backlog_;
 
 protected:
     void
@@ -69,6 +89,8 @@ protected:
     replace_which_way(int block_idx) override;
     int
     get_next_way_to_replace(const int block_idx) const override;
+    void
+    check_and_clear_backlog();
     // Optimization: remember last pid in addition to last tag
     memref_pid_t last_pid_;
 };

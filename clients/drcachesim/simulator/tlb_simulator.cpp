@@ -34,6 +34,7 @@
 #include <iterator>
 #include <string>
 #include <assert.h>
+#include <vector>
 #include <limits.h>
 #include <stdint.h> /* for supporting 64-bit integers*/
 #include "../common/memref.h"
@@ -58,8 +59,10 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
 {
     itlbs_ = new tlb_t *[knobs_.num_cores];
     dtlbs_ = new tlb_t *[knobs_.num_cores];
-    dtlb_prefetcher_ = new tlb_prefetcher_ghb_t(knobs_.num_cores);
-    // dtlb_prefetcher_ = NULL;
+    // dtlb_prefetcher_ = new tlb_prefetcher_ghb_t(knobs_.num_cores);
+    for (auto i = 0; i < knobs_.num_cores ; i++)
+        dtlb_backlogs_.push_back(std::vector<std::pair<memref_t, int_least64_t>>());
+    dtlb_prefetcher_ = NULL;
     lltlbs_ = new tlb_t;
     for (unsigned int i = 0; i < knobs_.num_cores; i++) {
         itlbs_[i] = NULL;
@@ -100,7 +103,7 @@ tlb_simulator_t::tlb_simulator_t(const tlb_simulator_knobs_t &knobs)
                              NULL, false, false, i) ||
             !dtlbs_[i]->init(knobs_.TLB_L1D_assoc, (int)knobs_.page_size,
                              knobs_.TLB_L1D_entries, lltlbs_, new tlb_stats_t((int)knobs_.page_size, i, "DTLB"),
-                             dtlb_prefetcher_, false, false, i)) {
+                             dtlb_prefetcher_, false, false, i, dtlb_backlogs_[i])) {
             error_string_ =
                 "Usage error: failed to initialize {i,d}tlbs_. Ensure entry number, "
                 "page size and associativity are powers of 2.";

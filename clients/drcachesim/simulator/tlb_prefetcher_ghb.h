@@ -40,6 +40,7 @@
 #include "trace_entry.h"
 #include "memref.h"
 #include <unordered_map>
+#include <tuple>
 
 #define DELTA_HISTORY_LENGTH 4
 #define PAGE_SIZE 4096
@@ -62,14 +63,16 @@ class ghb_entry_t {
 public:
     addr_t pc;
     addr_t prev_page;
+    int_least64_t prev_time;
     std::unordered_map<std::array<int_least64_t, DELTA_HISTORY_LENGTH> , int_least64_t, delta_hash> delta_lookup_;
+    std::unordered_map<std::array<int_least64_t, DELTA_HISTORY_LENGTH> , int_least64_t, delta_hash> num_access_lookup_;
     std::array<int_least64_t, DELTA_HISTORY_LENGTH> deltas_;
+    std::array<int_least64_t, DELTA_HISTORY_LENGTH> num_accesses_;
     uint8_t cpu_;
-    uint8_t lru_counter_;
 
     ghb_entry_t(uint8_t cpu);
-    int_least64_t
-    update_state(addr_t curr_page, bool same_cpu);
+    std::tuple<int_least64_t, int_least64_t>
+    update_state(addr_t curr_page, bool same_cpu, int_least64_t access_num);
 };
 
 class tlb_prefetcher_ghb_t {

@@ -36,7 +36,8 @@
 #ifndef _TLB_SIMULATOR_H_
 #define _TLB_SIMULATOR_H_ 1
 
-#include <unordered_map>
+#include <queue>
+#include <vector>
 #include "simulator.h"
 #include "tlb_simulator_create.h"
 #include "tlb_stats.h"
@@ -63,6 +64,7 @@ protected:
     // All of them are private to the core.
     tlb_t **itlbs_;
     tlb_t **dtlbs_;
+    std::vector<std::vector<std::pair<memref_t, int_least64_t>>> dtlb_backlogs_;
     tlb_prefetcher_ghb_t *dtlb_prefetcher_;
     tlb_t *lltlbs_;
 };
